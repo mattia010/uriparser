@@ -1,2 +1,2 @@
 # uriparser
- Simple URI parser that analyze a given URI based on RFC3986. It's a basic parser, so some schemes are supported, some of them are not. It works in both direction, given a URI can decompose it or given all of the parts it can create a URI.
+ URI parser that supports the parsing of every type of URI. It checks the validity of a URI, given a URI it gives back his parts, given the parts it assembles a URI.
