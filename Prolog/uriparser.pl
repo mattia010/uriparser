@@ -1,206 +1,252 @@
+:- use_module(library(lists)).
+
 is_uri(UriReference) :-
     (is_abs_uri(UriReference) ;
         is_rel_uri(UriReference)
-    ).
+    ),
+    !.
 is_uri(UriReference) :-
-    split_string(UriReference, '#', "", [Uri, Fragment]),
+    split_string(UriReference, "#", "", [Uri, Fragment]),
     (is_abs_uri(Uri) ;
         is_rel_uri(Uri)
     ),
     is_fragment(Fragment).
 
+is_rel_uri("") :- !, false.
+is_rel_uri(Uri) :-
+    split_string(Uri, "?", "", [Path, Query]),
+    (is_netpath(Path) ;
+        is_abs_path(Path),
+        is_rel_path(Path)
+    ),
+    is_query(Query),
+    !.
 is_rel_uri(Uri) :-
     (is_netpath(Uri) ;
         is_abs_path(Uri) ;
         is_rel_path(Uri)
     ).
-is_rel_uri(Uri) :-
-    split_string(Uri, '?', "", [Path, Query]),
-    (is_netpath(Path) ;
-        is_abs_path(Path),
-        is_rel_path(Path)
-    ),
-    is_query(Query).
 
 is_abs_uri(Uri) :-
+    Uri \= "",
     split_string(Uri, ":", "", [Scheme, Part]),
     is_scheme(Scheme),
     (is_hier_part(Part) ;
         is_opaque_part(Part)
     ).
 
+is_opaque_part("") :- !, false.
 is_opaque_part(Char) :-
+    string_length(Char, 1),
+    !,
     is_uric_no_slash(Char).
 is_opaque_part(OpaquePart) :-
-    string_chars(OpaquePart, [FirstChar | OpaqueList]),
+    string_chars(OpaquePart, [FirstChar | Rest]),
     is_uric_no_slash(FirstChar),
-    foreach(member(Char, OpaqueList), is_uric(Char)).
+    !,
+    string_chars(RestStr, Rest),
+    is_query(RestStr).    %not because is query, but use the same code as a query
+is_opaque_part(OpaquePart) :-
+    string_chars(OpaquePart, [First, Second, Third | Rest]),
+    string_chars(Escaped, [First, Second, Third]),
+    is_uric_no_slash(Escaped),
+    string_chars(RestStr, Rest),
+    is_query(RestStr).     %same as upper predicate
 
-is_uric_no_slash(Char) :-
-    (Char == ';' ;
-        Char == '?' ;
-        Char == ':' ;
-        Char == '@' ;
-        Char == '&' ;
-        Char == '=' ;
-        Char == '+' ;
-        Char == '$' ;
-        Char == ',' ;
-        is_unreserved(Char) ;
-        is_escaped(Char)
-    ).
-
+is_rel_path("") :- !, false.
 is_rel_path(Segment) :-
-    is_rel_segment(Segment).
+    is_rel_segment(Segment),
+    !.
 is_rel_path(Path) :-
     string_concat(Segment, AbsPath, Path),
     is_segment(Segment),
     is_abs_path(AbsPath).
 
+is_rel_segment("") :- !, false.
 is_rel_segment(Char) :-
-    (Char == ';' ;
-        Char == '@' ;
-        Char == '&' ;
-        Char == '=' ;
-        Char == '+' ;
-        Char == '$' ;
-        Char == ',' ;
-        is_unreserved(Char) ;
-        is_escaped(Char)
-    ).
+    string_length(Char, 1),
+    !,
+    (Char == ";" ;
+        Char == "@" ;
+        Char == "&" ;
+        Char == "=" ;
+        Char == "+" ;
+        Char == "$" ;
+        Char == "," ;
+        is_unreserved(Char)).
 is_rel_segment(Segment) :-
-    string_concat(FirstChar, Rest, Segment),
-    is_rel_segment(FirstChar),
-    is_rel_segment(Rest).
+    is_escaped(Segment),
+    !.
+is_rel_segment(Segment) :-
+    string_chars(Segment, [FirstChar, Rest]),
+    string_chars(FirstCharStr, [FirstChar]),
+    string_chars(RestStr, Rest),
+    is_rel_segment(FirstCharStr),
+    is_rel_segment(RestStr).
 
+is_hier_part("") :- !, false.
 is_hier_part(HierPart) :-
     (is_netpath(HierPart) ;
         is_abs_path(HierPart)
-    ).
+    ),
+    !.
 is_hier_part(HierPart) :-
-    split_string(HierPart, '?', "", [Path, Query]),
+    split_string(HierPart, "?", "", [Path, Query]),
     (is_netpath(Path) ;
         is_abs_path(Path)
     ),
     is_query(Query).
 
+is_netpath("") :- !, false.
 is_netpath(Path) :-
     string_concat("//", Authority, Path),
-    is_authority(Authority).
+    is_authority(Authority),
+    !.
 is_netpath(Path) :-
     string_concat("//", Rest, Path),
     string_concat(Authority, AbsPath, Rest),
     is_authority(Authority),
     is_abs_path(AbsPath).
 
-is_scheme(Scheme) :-
-    string_chars(Scheme, [Char]),
-    char_type(Char, alpha).
+is_scheme("") :- !, false.
+is_scheme(Char) :-
+    string_length(Char, 1),
+    !,
+    is_alpha(Char).
 is_scheme(Scheme) :-
     string_chars(Scheme, [FirstChar | SchemeList]),
-    char_type(FirstChar, alpha),
-    foreach(member(Char, SchemeList), (char_type(Char, alnum) ;
-                                        Char == '+' ;
-                                        Char == '-' ;
-                                        Char == '.')).
+    is_alpha(FirstChar),
+    foreach(member(Char, SchemeList), (is_alnum(Char) ;
+                                        Char == "+" ;
+                                        Char == "-" ;
+                                        Char == ".")).
 
+is_authority("") :- !, false.
 is_authority(Authority) :-
-    is_serverbased(Authority).
-is_authority(Authority) :-
-    is_regbased(Authority).
+    (is_serverbased(Authority) ;
+        is_regbased(Authority)).
 
+is_regbased("") :- !, false.
+is_regbased(Char) :-
+    string_length(Char, 1),
+    !,
+    (Char == "$" ;
+        Char == "," ;
+        Char == ";" ;
+        Char == ":" ;
+        Char == "@" ;
+        Char == "&" ;
+        Char == "=" ;
+        Char == "+" ;
+        is_unreserved(Char)).
 is_regbased(RegBased) :-
-    string_chars(RegBased, RegBasedList),
-    length(RegBasedList, Length), Length > 0,
-    foreach(member(Char, RegBasedList), (Char == '$' ;
-                                            Char == ',' ;
-                                            Char == ';' ;
-                                            Char == ':' ;
-                                            Char == "@" ;
-                                            Char == "&" ;
-                                            Char == "=" ;
-                                            Char == "+" ;
-                                            is_unreserved(Char) ;
-                                            is_escaped(Char))).
+    is_escaped(RegBased),
+    !.
+is_regbased(RegBased) :-
+    string_chars(RegBased, [FirstChar | Rest]),
+    string_chars(RestStr, Rest),
+    is_regbased(FirstChar),
+    is_regbased(RestStr).
 
+
+is_serverbased("") :- !, false.
+is_serverbased(ServerBased) :-
+    split_string(ServerBased, "@", "", [UserInfo, HostPort]),
+    !,
+    is_userinfo(UserInfo),
+    is_hostport(HostPort).
 is_serverbased(ServerBased) :-
     is_hostport(ServerBased).
-is_serverbased(ServerBased) :-
-    string_concat(Tmp, Hostport, ServerBased),
-    string_concat(UserInfo, '@', Tmp),
-    is_userinfo(UserInfo),
-    is_hostport(Hostport).
     
-is_userinfo("").
+is_userinfo("") :- !.
+is_userinfo(Char) :-
+    string_length(Char, 1),
+    !,
+    (Char == ";" ;
+        Char == ":" ;
+        Char == "&" ;
+        Char == "=" ;
+        Char == "+" ;
+        Char == "$" ;
+        Char == "," ;
+        is_unreserved(Char)).
 is_userinfo(UserInfo) :-
-    string_chars(UserInfo, UserInfoList),
-    foreach(member(Char, UserInfoList), (Char == ';' ;
-                                            Char == ':' ;
-                                            Char == '&' ;
-                                            Char == '=' ;
-                                            Char == '+' ;
-                                            Char == '$' ;
-                                            Char == ',' ;
-                                            is_unreserved(Char) ;
-                                            is_escaped(Char))).
+    is_escaped(UserInfo),
+    !.
+is_userinfo(UserInfo) :-
+    string_concat(FirstChar, Rest, UserInfo),
+    is_userinfo(FirstChar),
+    is_userinfo(Rest).
 
-is_hostport(Host) :-
-    is_host(Host).
+is_hostport("") :- !, false.
 is_hostport(HostPort) :-
-    string_concat(Tmp, Port, HostPort),
-    string_concat(Host, ':', Tmp),
+    split_string(HostPort, ":", "", [Host, Port]),
+    !,
     is_host(Host),
     is_port(Port).
+is_hostport(Host) :-
+    is_host(Host).
 
 is_host(Hostname) :-
-    is_hostname(Hostname).
-is_host(Ipv4) :-
-    is_ipaddress(Ipv4).
+    Hostname \= "",
+    (is_hostname(Hostname) ;
+        is_ipaddress(Hostname)).
 
-%DA SISTEMARE
+
 is_hostname(Hostname) :-
+    string_concat(Pre, ".", Hostname),
+    !,
+    is_hostname(Pre).
+is_hostname(Hostname) :-
+    not(sub_string(Hostname, _, _, _, ".")),
+    !,
     is_toplabel(Hostname).
-is_hostname(Hostname) :-
-    string_concat(TopLabel, '.', Hostname),
-    is_toplabel(TopLabel).
-is_hostname(Hostname) :-
-    string_concat(DomainLabel, '.', Tmp),
-    string_concat(Tmp, Rest, Hostname),
+is_hostname(Hostname) :-        %QUI POSSONO ESSERCI ERRORI CON INDICE E LUNGHEZZA
+    split_string(Hostname, ".", "", [DomainLabel | _]),
     is_domain_label(DomainLabel),
+    !,
+    string_length(DomainLabel, Index),
+    string_length(Hostname, Tmp),
+    Length is Tmp - Index,
+    sub_string(Hostname, Index, Length, _, Rest),
     is_hostname(Rest).
     
-
 is_domain_label(Char) :-
-    char_type(Char, alnum).
+    string_length(Char, 1),
+    !,
+    is_alnum(Char).
 is_domain_label(Label) :-
-    string_concat(FirstChar, SecondChar, Label),
-    char_type(FirstChar, alnum),
-    char_type(SecondChar, alnum).
+    string_chars(Label, [FirstChar, SecondChar]),
+    !,
+    is_alnum(FirstChar),
+    is_alnum(SecondChar).
 is_domain_label(Label) :-
-    string_concat(FirstChar, Rest, Tmp),
-    string_concat(Tmp, LastChar, Label),
-    char_type(FirstChar, alnum),
-    char_type(LastChar, alnum),
-    string_chars(Rest, RestList),
-    foreach(member(Char, RestList), (char_type(Char, alnum) ;
-                                        Char == '-')).
+    string_chars(Label, [FirstChar | Rest]),
+    last(Rest, LastChar),
+    is_alnum(FirstChar),
+    is_alnum(LastChar),
+    foreach(member(Char, Rest), (is_alnum(Char) ;
+                                        Char == "-")).
 
 is_toplabel(Char) :-
-    char_type(Char, alpha).
+    string_length(Char, 1),
+    !,
+    is_alpha(Char).
 is_toplabel(Label) :-
-    string_concat(FirstChar, SecondChar, Label),
-    char_type(FirstChar, alpha),
-    char_type(SecondChar, alnum).
+    string_chars(Label, [FirstChar, SecondChar]),
+    !,
+    is_alpha(FirstChar),
+    is_alnum(SecondChar).
 is_toplabel(Label) :-
-    string_concat(FirstChar, Rest, Tmp),
-    string_concat(Tmp, LastChar, Label),
-    char_type(FirstChar, alpha),
-    char_type(LastChar, alnum),
-    string_chars(Rest, RestList),
-    foreach(member(Char, RestList), (char_type(Char, alnum) ;
-                                        Char == '-')).
+    string_chars(Label, [FirstChar | Rest]),
+    last(Rest, LastChar),
+    is_alpha(FirstChar),
+    is_alnum(LastChar),
+    foreach(member(Char, Rest), (is_alnum(Char) ;
+                                        Char == "-")).
 
 is_ipaddress(Ipv4) :-
+    Ipv4 \= "",
     split_string(Ipv4, ".", "", [First, Second, Third, Fourth]),
     foreach(member(Octet, [First, Second, Third, Fourth]),
             is_octet(Octet)).
@@ -215,11 +261,12 @@ is_port(Port) :-
     integer(PortNumber).
 
 is_path(Path) :-
-    is_abs_path(Path).
-is_path(Path) :-
-    is_opaque_part(Path).
+    Path \= "",
+    (is_abs_path(Path) ;
+        is_opaque_part(Path)).
 
 is_abs_path(AbsPath) :-
+    AbsPath \= "",
     string_concat("/", Segments, AbsPath),
     split_string(Segments, "/", "", [Segment | SegmentsList]),
     Segment \= "",
@@ -237,19 +284,55 @@ is_param(Param) :-
 
 is_query("").
 is_query(Query) :-
-    string_chars(Query, QueryList),
-    foreach(member(Char, QueryList), is_uric(Char)).
+    string_chars(Query, [FirstChar | Rest]),
+    string_chars(RestStr, Rest),
+    is_uric(FirstChar),
+    !,
+    is_query(RestStr).
+is_query(Query) :-
+    string_chars(Query, [First, Second, Third | Rest]),
+    string_chars(Escaped, [First, Second, Third]),
+    string_chars(RestStr, Rest),
+    is_uric(Escaped),
+    is_query(RestStr).
 
 is_fragment("").
 is_fragment(Fragment) :-
-    string_chars(Fragment, FragmentList),
-    foreach(member(Char, FragmentList), is_uric(Char)).
+    string_chars(Fragment, [FirstChar | Rest]),
+    string_chars(RestStr, Rest),
+    is_uric(FirstChar),
+    !,
+    is_fragment(RestStr).
+is_fragment(Fragment) :-
+    string_chars(Fragment, [First, Second, Third | Rest]),
+    string_chars(Escaped, [First, Second, Third]),
+    string_chars(RestStr, Rest),
+    is_uric(Escaped),
+    is_fragment(RestStr).
 
 is_uric(Char) :-
+    string_length(Char, 1),
+    !,
     (is_reserved(Char) ;
-        is_unreserved(Char) ;
-        is_escaped(Char)
-    ).
+        is_unreserved(Char)).
+is_uric(Escaped) :-
+    is_escaped(Escaped).
+
+is_uric_no_slash(Char) :-
+    string_length(Char, 1),
+    !,
+    (Char == ";" ;
+        Char == "?" ;
+        Char == ":" ;
+        Char == "@" ;
+        Char == "&" ;
+        Char == "=" ;
+        Char == "+" ;
+        Char == "$" ;
+        Char == "," ;
+        is_unreserved(Char)).
+is_uric_no_slash(Escaped) :-
+    is_escaped(Escaped).
 
 is_pchar(Char) :-
     (Char == ':' ;
@@ -276,14 +359,14 @@ is_reserved(Char) :-
         Char == ',').
 
 is_unreserved(Char) :-
-    (char_type(Char, alnum) ;
+    (is_alnum(Char) ;
         is_mark(Char)).
 
 is_mark(Char) :-
     (Char == '-' ;
         Char == '_' ;
         Char == '.' ;
-        Char == '!' ;
+        Char == '!';
         Char == '~' ;
         Char == '*' ;
         Char == "'" ;
@@ -291,11 +374,12 @@ is_mark(Char) :-
         Char == ')').
 
 is_escaped(String) :- 
-    string_chars(String, ['%', FirstHex, SecondHex]),
+    string_length(String, 3),
+    string_chars(String, ["%", FirstHex, SecondHex]),
     is_hex_digit(FirstHex),
     is_hex_digit(SecondHex).
 is_hex_digit(Char) :-
-    (char_type(Char, digit) ;
+    (is_digit(Char) ;
         Char == 'A' ;
         Char == 'B' ;
         Char == 'C' ;
@@ -309,18 +393,15 @@ is_hex_digit(Char) :-
         Char == 'e' ;
         Char == 'f').
 
+loop(0).
+loop(N) :-
+    is_uri('https://www.example.com/path/to;param?query#fragment'),
+    Tmp is N - 1,
+    loop(Tmp).
+
 :- begin_tests(is_uri).
 
-test(is_abs_uri) :-
-    is_uri('https://www.example.com').
-
-test(is_rel_uri) :-
-    is_uri('/path/to/resource').
-
-test(is_uri_with_fragment) :-
-    is_uri('https://www.example.com#fragment').
-
-test(is_uri_with_fragment_and_rel_uri) :-
-    is_uri('/path/to/resource#fragment').
+test(loop) :-
+    loop(100).
 
 :- end_tests(is_uri).
