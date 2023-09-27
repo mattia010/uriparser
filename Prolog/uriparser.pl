@@ -1,407 +1,533 @@
 :- use_module(library(lists)).
 
-is_uri(UriReference) :-
-    (is_abs_uri(UriReference) ;
-        is_rel_uri(UriReference)
-    ),
+uri_parts(Uri, Scheme, Hierpart, "", "") :-
+    string_concat(Tmp, Hierpart, Uri),
+    string_concat(Scheme, ":", Tmp),
+    scheme(Scheme),
+    hier_part(Hierpart),
     !.
-is_uri(UriReference) :-
-    split_string(UriReference, "#", "", [Uri, Fragment]),
-    (is_abs_uri(Uri) ;
-        is_rel_uri(Uri)
-    ),
-    is_fragment(Fragment).
-
-is_rel_uri("") :- !, false.
-is_rel_uri(Uri) :-
-    split_string(Uri, "?", "", [Path, Query]),
-    (is_netpath(Path) ;
-        is_abs_path(Path),
-        is_rel_path(Path)
-    ),
-    is_query(Query),
+uri_parts(Uri, Scheme, Hierpart, Query, "") :-
+    string_concat(Tmp, Query, Uri),
+    string_concat(Pre, "?", Tmp),
+    query(Query),
+    uri_parts(Pre, Scheme, Hierpart, "", ""),
     !.
-is_rel_uri(Uri) :-
-    (is_netpath(Uri) ;
-        is_abs_path(Uri) ;
-        is_rel_path(Uri)
-    ).
-
-is_abs_uri(Uri) :-
-    Uri \= "",
-    split_string(Uri, ":", "", [Scheme, Part]),
-    is_scheme(Scheme),
-    (is_hier_part(Part) ;
-        is_opaque_part(Part)
-    ).
-
-is_opaque_part("") :- !, false.
-is_opaque_part(Char) :-
-    string_length(Char, 1),
-    !,
-    is_uric_no_slash(Char).
-is_opaque_part(OpaquePart) :-
-    string_chars(OpaquePart, [FirstChar | Rest]),
-    is_uric_no_slash(FirstChar),
-    !,
-    string_chars(RestStr, Rest),
-    is_query(RestStr).    %not because is query, but use the same code as a query
-is_opaque_part(OpaquePart) :-
-    string_chars(OpaquePart, [First, Second, Third | Rest]),
-    string_chars(Escaped, [First, Second, Third]),
-    is_uric_no_slash(Escaped),
-    string_chars(RestStr, Rest),
-    is_query(RestStr).     %same as upper predicate
-
-is_rel_path("") :- !, false.
-is_rel_path(Segment) :-
-    is_rel_segment(Segment),
+uri_parts(Uri, Scheme, Hierpart, Query, Fragment) :-
+    string_concat(Tmp, Fragment, Uri),
+    string_concat(Pre, "#", Tmp),
+    fragment(Fragment),
+    uri_parts(Pre, Scheme, Hierpart, Query, ""),
     !.
-is_rel_path(Path) :-
-    string_concat(Segment, AbsPath, Path),
-    is_segment(Segment),
-    is_abs_path(AbsPath).
 
-is_rel_segment("") :- !, false.
-is_rel_segment(Char) :-
-    string_length(Char, 1),
-    !,
-    (Char == ";" ;
-        Char == "@" ;
-        Char == "&" ;
-        Char == "=" ;
-        Char == "+" ;
-        Char == "$" ;
-        Char == "," ;
-        is_unreserved(Char)).
-is_rel_segment(Segment) :-
-    is_escaped(Segment),
+
+uri(Uri) :-
+    split_string(Uri, ':', "", [Scheme, Hierpart]),
+    scheme(Scheme),
+    hier_part(Hierpart),
     !.
-is_rel_segment(Segment) :-
-    string_chars(Segment, [FirstChar, Rest]),
-    string_chars(FirstCharStr, [FirstChar]),
-    string_chars(RestStr, Rest),
-    is_rel_segment(FirstCharStr),
-    is_rel_segment(RestStr).
-
-is_hier_part("") :- !, false.
-is_hier_part(HierPart) :-
-    (is_netpath(HierPart) ;
-        is_abs_path(HierPart)
-    ),
+uri(Uri) :-
+    split_string(Uri, '?', "", [Prefix, Query]),
+    query(Query),
+    uri(Prefix),
     !.
-is_hier_part(HierPart) :-
-    split_string(HierPart, "?", "", [Path, Query]),
-    (is_netpath(Path) ;
-        is_abs_path(Path)
-    ),
-    is_query(Query).
+uri(Uri) :-
+    split_string(Uri, '#', "", [Prefix, Fragment]),
+    fragment(Fragment),
+    uri(Prefix).
 
-is_netpath("") :- !, false.
-is_netpath(Path) :-
-    string_concat("//", Authority, Path),
-    is_authority(Authority),
+hier_part(Path) :-
+    path_absolute(Path),
     !.
-is_netpath(Path) :-
-    string_concat("//", Rest, Path),
-    string_concat(Authority, AbsPath, Rest),
-    is_authority(Authority),
-    is_abs_path(AbsPath).
-
-is_scheme("") :- !, false.
-is_scheme(Char) :-
-    string_length(Char, 1),
-    !,
-    is_alpha(Char).
-is_scheme(Scheme) :-
-    string_chars(Scheme, [FirstChar | SchemeList]),
-    is_alpha(FirstChar),
-    foreach(member(Char, SchemeList), (is_alnum(Char) ;
-                                        Char == "+" ;
-                                        Char == "-" ;
-                                        Char == ".")).
-
-is_authority("") :- !, false.
-is_authority(Authority) :-
-    (is_serverbased(Authority) ;
-        is_regbased(Authority)).
-
-is_regbased("") :- !, false.
-is_regbased(Char) :-
-    string_length(Char, 1),
-    !,
-    (Char == "$" ;
-        Char == "," ;
-        Char == ";" ;
-        Char == ":" ;
-        Char == "@" ;
-        Char == "&" ;
-        Char == "=" ;
-        Char == "+" ;
-        is_unreserved(Char)).
-is_regbased(RegBased) :-
-    is_escaped(RegBased),
+hier_part(Path) :-
+    path_rootless(Path),
     !.
-is_regbased(RegBased) :-
-    string_chars(RegBased, [FirstChar | Rest]),
-    string_chars(RestStr, Rest),
-    is_regbased(FirstChar),
-    is_regbased(RestStr).
-
-
-is_serverbased("") :- !, false.
-is_serverbased(ServerBased) :-
-    split_string(ServerBased, "@", "", [UserInfo, HostPort]),
-    !,
-    is_userinfo(UserInfo),
-    is_hostport(HostPort).
-is_serverbased(ServerBased) :-
-    is_hostport(ServerBased).
-    
-is_userinfo("") :- !.
-is_userinfo(Char) :-
-    string_length(Char, 1),
-    !,
-    (Char == ";" ;
-        Char == ":" ;
-        Char == "&" ;
-        Char == "=" ;
-        Char == "+" ;
-        Char == "$" ;
-        Char == "," ;
-        is_unreserved(Char)).
-is_userinfo(UserInfo) :-
-    is_escaped(UserInfo),
+hier_part(Path) :-
+    path_empty(Path),
     !.
-is_userinfo(UserInfo) :-
-    string_concat(FirstChar, Rest, UserInfo),
-    is_userinfo(FirstChar),
-    is_userinfo(Rest).
+hier_part(String) :-
+    string_concat("//", Rest, String),
+    string_concat(Authority, Path, Rest),
+    authority(Authority),
+    path_abempty(Path).
 
-is_hostport("") :- !, false.
-is_hostport(HostPort) :-
-    split_string(HostPort, ":", "", [Host, Port]),
+uri_reference(Uri) :-
+    uri(Uri),
+    !.
+uri_reference(RelRef) :-
+    relative_ref(RelRef).
+
+absolute_uri(Uri) :-
+    split_string(Uri, ':', "", [Scheme, Hierpart]),
+    scheme(Scheme),
+    hier_part(Hierpart),
+    !.
+absolute_uri(Uri) :-
+    split_string(Uri, '?', "", [Prefix, Query]),
+    query(Query),
+    absolute_uri(Prefix).
+
+relative_ref(RelPart) :-
+    relative_part(RelPart),
+    !.
+relative_ref(Ref) :-
+    split_string(Ref, '?', "", [RelPart, Query]),
+    query(Query),
+    relative_part(RelPart),
+    !.
+relative_ref(Ref) :-
+    split_string(Ref, '#', "", [Prefix, Fragment]),
+    fragment(Fragment),
+    relative_ref(Prefix).
+
+relative_part(String) :-
+    string_concat("//", Rest, String),
     !,
-    is_host(Host),
-    is_port(Port).
-is_hostport(Host) :-
-    is_host(Host).
+    string_concat(Authority, Path, Rest),
+    authority(Authority),
+    path_abempty(Path).
+relative_part(Path) :-
+    path_absolute(Path),
+    !.
+relative_part(Path) :-
+    path_noscheme(Path),
+    !.
+relative_part(Path) :-
+    path_empty(Path).
 
-is_host(Hostname) :-
-    Hostname \= "",
-    (is_hostname(Hostname) ;
-        is_ipaddress(Hostname)).
+scheme(Char) :-
+    alpha(Char),
+    !.
+scheme(Scheme) :-
+    string_concat(FirstChar, Rest, Scheme),
+    alpha(FirstChar),
+    scheme_char(Rest).
+scheme_char("+") :- !.
+scheme_char("-") :- !.
+scheme_char(",") :- !.
+scheme_char(Char) :-
+    alpha(Char),
+    !.
+scheme_char(Char) :-
+    digit(Char),
+    !.
+scheme_char(String) :-
+    string_concat(FirstChar, Rest, String),
+    string_length(FirstChar, 1),
+    scheme_char(FirstChar),
+    scheme_char(Rest).
+
+%DA TESTARE
+authority(Host) :-
+    host(Host),
+    !.
+authority(Hostport) :-
+    split_string(Hostport, ':', "", [Host, Port]),
+    port(Port),
+    host(Host),
+    !.
+authority(Authority) :-
+    split_string(Authority, '@', "", [Userinfo, Rest]),
+    userinfo(Userinfo),
+    authority(Rest).
+
+userinfo("") :- !.
+userinfo(Userinfo) :-
+    string_concat(Chars, Rest, Userinfo),
+    userinfo_char(Chars),
+    userinfo(Rest),
+    !.
+userinfo_char(":") :- !.
+userinfo_char(Char) :-
+    unreserved(Char),
+    !.
+userinfo_char(Char) :-
+    sub_delims(Char),
+    !.
+userinfo_char(Encoded) :-
+    pct_encoded(Encoded).
+%RITESTARE QUESTO CASO CHE ORA è COMMENTATO
+%host(IpLit) :-
+    %ip_literal(IpLit),
+    %!.
+host(Ip) :-
+    ipv4address(Ip),
+    !.
+host(Reg) :-
+    reg_name(Reg).
+
+port("") :- !.
+port(Port) :-
+    string_concat(FirstDigit, Rest, Port),
+    digit(FirstDigit),
+    port(Rest).
+
+%DA TESTARE
+ip_literal(String) :-
+    string_concat('[', Rest, String),
+    string_concat(IP, ']', Rest),
+    (%ipv6address(IP);
+    ipvfuture(IP)).
+
+%%DA TESTARE
+ipvfuture(String) :-
+    string_concat("v", Rest, String),
+    split_string(Rest, '.', "", [Pre, Post]), Pre \= "", Post \= "",
+    hex_digits(Pre),
+    ipvfuture_char(Post).
+ipvfuture_char(":") :- !.
+ipvfuture_char(Char) :-
+    unreserved(Char),
+    !.
+ipvfuture_char(Char) :-
+    sub_delims(Char),
+    !.
+ipvfuture_char(String) :-
+    string_concat(FirstChar, Rest, String),
+    string_length(FirstChar, 1),
+    ipvfuture_char(FirstChar),
+    ipvfuture_char(Rest).
+%
+%
+% IMPLEMENTARE IPV6 ADDRESS
+% E DA SISTEMARE E TESTARE
+%
+%
+ipv6address(Ipv6) :-
+    split_string(Ipv6, ':', "", [H1, H2, H3, H4, H5, H6, Ls]),
+    foreach(member(H, [H1, H2, H3, H4, H5, H6]), h16(H)),
+    ls32(Ls).
+ipv6address(Ipv6) :-
+    string_concat("::", Rest, Ipv6),
+    split_string(Rest, ':', "", [H1, H2, H3, H4, H5, Ls]),
+    foreach(member(H, [H1, H2, H3, H4, H5]), h16(H)),
+    ls32(Ls).
+ipv6address(Ipv6) :-
+    string_concat("::", Rest, Ipv6),
+    split_string(Rest, ':', "", [H1, H2, H3, H4, Ls]),
+    foreach(member(H, [H1, H2, H3, H4]), h16(H)),
+    ls32(Ls).
+ipv6address(Ipv6) :-
+    string_concat("::", Rest, Ipv6),
+    split_string(Rest, ':', "", [H1, H2, H3, Ls]),
+    foreach(member(H, [H1, H2, H3]), h16(H)),
+    ls32(Ls).
+ipv6address(Ipv6) :-
+    string_concat("::", Rest, Ipv6),
+    split_string(Rest, ':', "", [H1, H2, Ls]),
+    foreach(member(H, [H1, H2]), h16(H)),
+    ls32(Ls).
+ipv6address(Ipv6) :-
+    string_concat("::", Rest, Ipv6),
+    split_string(Rest, ':', "", [H, Ls]),
+    h16(H),
+    ls32(Ls).
+ipv6address(Ipv6) :-
+    string_concat("::", Ls, Ipv6),
+    ls32(Ls).
+ipv6address(Ipv6) :-
+    string_concat("::", H, Ipv6),
+    h16(H).
+ipv6address("::").
+ipv6address(Ipv6) :-
+    string_concat(H, "::", Ipv6),
+    h16(H).
+%ipv6address(Ipv6) :-
+%   string_concat(Pre, "::", Ipv6),
+%   string_concat(H6s, H, Pre),
+%   h16(H).
 
 
-is_hostname(Hostname) :-
-    string_concat(Pre, ".", Hostname),
+
+h16(String) :-
+    string_length(String, 4),
+    hex_digits(String),
+    !.
+h16(String) :-
+    string_concat(Quad, Rest, String),
+    string_length(Quad, 4),
+    hex_digits(Quad),
+    h16(Rest).
+
+ls32(Ipv4) :- 
+    ipv4address(Ipv4),
+    !.
+ls32(Ls) :-
+    split_string(Ls, ':', "", [H1, H2]),
+    h16(H1),
+    h16(H2).
+
+ipv4address(Ipv4) :-
+    split_string(Ipv4, '.', "", [Oct1, Oct2, Oct3, Oct4]),
+    foreach(member(Octet, [Oct1, Oct2, Oct3, Oct4]), dec_octet(Octet)).
+
+dec_octet(Digit) :-
+    digit(Digit),
+    !.
+dec_octet(Octet) :-
+    string_concat(Digit1, Digit2, Octet),
+    digit(Digit1), digit(Digit2),
+    Digit1 \= '0',
+    !.
+dec_octet(Octet) :-
+    string_concat("1", Rest, Octet),
     !,
-    is_hostname(Pre).
-is_hostname(Hostname) :-
-    not(sub_string(Hostname, _, _, _, ".")),
+    string_concat(Digit1, Digit2, Rest),
+    digit(Digit1),
+    digit(Digit2).
+dec_octet(Octet) :-
+    string_concat("2", Rest, Octet),
+    string_concat(Digit1, Digit2, Rest),
+    digit(Digit1),
+    number_string(Num, Digit1), Num < 5,
     !,
-    is_toplabel(Hostname).
-is_hostname(Hostname) :-        %QUI POSSONO ESSERCI ERRORI CON INDICE E LUNGHEZZA
-    split_string(Hostname, ".", "", [DomainLabel | _]),
-    is_domain_label(DomainLabel),
-    !,
-    string_length(DomainLabel, Index),
-    string_length(Hostname, Tmp),
-    Length is Tmp - Index,
-    sub_string(Hostname, Index, Length, _, Rest),
-    is_hostname(Rest).
-    
-is_domain_label(Char) :-
-    string_length(Char, 1),
-    !,
-    is_alnum(Char).
-is_domain_label(Label) :-
-    string_chars(Label, [FirstChar, SecondChar]),
-    !,
-    is_alnum(FirstChar),
-    is_alnum(SecondChar).
-is_domain_label(Label) :-
-    string_chars(Label, [FirstChar | Rest]),
-    last(Rest, LastChar),
-    is_alnum(FirstChar),
-    is_alnum(LastChar),
-    foreach(member(Char, Rest), (is_alnum(Char) ;
-                                        Char == "-")).
+    digit(Digit2).
+dec_octet(Octet) :-
+    string_concat("25", Digit, Octet),
+    digit(Digit),
+    number_string(Num, Digit), Num < 6.
 
-is_toplabel(Char) :-
-    string_length(Char, 1),
-    !,
-    is_alpha(Char).
-is_toplabel(Label) :-
-    string_chars(Label, [FirstChar, SecondChar]),
-    !,
-    is_alpha(FirstChar),
-    is_alnum(SecondChar).
-is_toplabel(Label) :-
-    string_chars(Label, [FirstChar | Rest]),
-    last(Rest, LastChar),
-    is_alpha(FirstChar),
-    is_alnum(LastChar),
-    foreach(member(Char, Rest), (is_alnum(Char) ;
-                                        Char == "-")).
+reg_name("") :- !.
+reg_name(Name) :-
+    string_concat(Chars, Rest, Name),
+    reg_helper(Chars),
+    reg_name(Rest),
+    !.
+reg_helper(Char) :-
+    unreserved(Char),
+    !.
+reg_helper(Char) :-
+    sub_delims(Char),
+    !.
+reg_helper(Chars) :-
+    pct_encoded(Chars).
 
-is_ipaddress(Ipv4) :-
-    Ipv4 \= "",
-    split_string(Ipv4, ".", "", [First, Second, Third, Fourth]),
-    foreach(member(Octet, [First, Second, Third, Fourth]),
-            is_octet(Octet)).
+path(Path) :-
+    path_abempty(Path),
+    !.
+path(Path) :-
+    path_absolute(Path),
+    !.
+path(Path) :-
+    path_noscheme(Path),
+    !.
+path(Path) :-
+    path_rootless(Path),
+    !.
+path(Path) :-
+    path_empty(Path).
 
-is_octet(Octet) :-
-    string_length(Octet, Length), Length > 0, Length < 4,
-    number_string(OctetNumber, Octet),
-    integer(OctetNumber).
+path_abempty("") :- !.
+path_abempty(Path) :-
+    string_concat("/", Segment, Path),
+    segment(Segment),
+    !.
+path_abempty(Path) :-
+    string_concat(FirstSegment, Rest, Path),
+    string_concat("/", Segment, FirstSegment),
+    segment(Segment),
+    path_abempty(Rest).
 
-is_port(Port) :-
-    number_string(PortNumber, Port),
-    integer(PortNumber).
+path_absolute("/") :- !.
+path_absolute(Path) :-
+    string_concat("/", PathRootless, Path),
+    path_rootless(PathRootless).
 
-is_path(Path) :-
-    Path \= "",
-    (is_abs_path(Path) ;
-        is_opaque_part(Path)).
+path_noscheme(Path) :-
+    string_concat(SegmentNzNc, Rest, Path),
+    segment_nz_nc(SegmentNzNc),
+    path_abempty(Rest).
 
-is_abs_path(AbsPath) :-
-    AbsPath \= "",
-    string_concat("/", Segments, AbsPath),
-    split_string(Segments, "/", "", [Segment | SegmentsList]),
-    Segment \= "",
-    foreach(member(S, [Segment | SegmentsList]), is_segment(S)).
+path_rootless(Path) :-
+    string_concat(SegmentNz, Rest, Path),
+    segment_nz(SegmentNz),
+    path_abempty(Rest).
 
-is_segment("").
-is_segment(Segment) :-
-    split_string(Segment, ";", "", ParamList),
-    foreach(member(P, ParamList), is_param(P)).
+path_empty("").
 
-is_param("").
-is_param(Param) :-
-    string_chars(Param, ParamList),
-    foreach(member(Char, ParamList), is_pchar(Char)).
+segment("") :- !.
+segment(Segment) :-
+    string_concat(Pchar, Rest, Segment),
+    pchar(Pchar),
+    segment(Rest).
 
-is_query("").
-is_query(Query) :-
-    string_chars(Query, [FirstChar | Rest]),
-    string_chars(RestStr, Rest),
-    is_uric(FirstChar),
-    !,
-    is_query(RestStr).
-is_query(Query) :-
-    string_chars(Query, [First, Second, Third | Rest]),
-    string_chars(Escaped, [First, Second, Third]),
-    string_chars(RestStr, Rest),
-    is_uric(Escaped),
-    is_query(RestStr).
+segment_nz(Pchar) :-
+    pchar(Pchar),
+    !.
+segment_nz(Segment) :-
+    string_concat(Pchar, Rest, Segment),
+    Pchar \= "", Rest \= "",
+    pchar(Pchar),
+    segment_nz(Rest).
 
-is_fragment("").
-is_fragment(Fragment) :-
-    string_chars(Fragment, [FirstChar | Rest]),
-    string_chars(RestStr, Rest),
-    is_uric(FirstChar),
-    !,
-    is_fragment(RestStr).
-is_fragment(Fragment) :-
-    string_chars(Fragment, [First, Second, Third | Rest]),
-    string_chars(Escaped, [First, Second, Third]),
-    string_chars(RestStr, Rest),
-    is_uric(Escaped),
-    is_fragment(RestStr).
+segment_nz_nc("@") :- !.
+segment_nz_nc(Char) :-
+    unreserved(Char),
+    !.
+segment_nz_nc(Char) :-
+    sub_delims(Char),
+    !.
+segment_nz_nc(Encoded) :-
+    pct_encoded(Encoded),
+    !.
+segment_nz_nc(Segment) :-
+    string_concat(Chars, Rest, Segment),
+    Chars \= "", Rest \= "",
+    segment_nz_nc(Chars),
+    segment_nz_nc(Rest).
 
-is_uric(Char) :-
-    string_length(Char, 1),
-    !,
-    (is_reserved(Char) ;
-        is_unreserved(Char)).
-is_uric(Escaped) :-
-    is_escaped(Escaped).
+pchar(":") :- !.
+pchar("@") :- !.
+pchar(Char) :-
+    unreserved(Char),
+    !.
+pchar(Char) :-
+    sub_delims(Char),
+    !.
+pchar(Encoded) :-
+    pct_encoded(Encoded).
 
-is_uric_no_slash(Char) :-
-    string_length(Char, 1),
-    !,
-    (Char == ";" ;
-        Char == "?" ;
-        Char == ":" ;
-        Char == "@" ;
-        Char == "&" ;
-        Char == "=" ;
-        Char == "+" ;
-        Char == "$" ;
-        Char == "," ;
-        is_unreserved(Char)).
-is_uric_no_slash(Escaped) :-
-    is_escaped(Escaped).
+query(Query) :-
+    fragment(Query).   %Query and Fragment use the exact same code, so this is code reusing, Query and Fragment are not related
 
-is_pchar(Char) :-
-    (Char == ':' ;
-        Char == '@' ;
-        Char == '&' ;
-        Char == '=' ;
-        Char == '+' ;
-        Char == '$' ;
-        Char == ',' ;
-        is_unreserved(Char) ;
-        is_escaped(Char)
-    ).
+fragment("") :- !.
+fragment(Fragment) :-
+    string_concat(Chars, Rest, Fragment),
+    fragment_char(Chars),
+    fragment(Rest),
+    !.
+fragment_char("/") :- !.
+fragment_char("?") :- !.
+fragment_char(Pchar) :-
+    pchar(Pchar).
 
-is_reserved(Char) :-
-    (Char == ';' ;
-        Char == '/' ;
-        Char == '?' ;
-        Char == ':' ;
-        Char == '@' ;
-        Char == '&' ;
-        Char == '=' ;
-        Char == '+' ;
-        Char == '$' ;
-        Char == ',').
 
-is_unreserved(Char) :-
-    (is_alnum(Char) ;
-        is_mark(Char)).
-
-is_mark(Char) :-
-    (Char == '-' ;
-        Char == '_' ;
-        Char == '.' ;
-        Char == '!';
-        Char == '~' ;
-        Char == '*' ;
-        Char == "'" ;
-        Char == '(' ;
-        Char == ')').
-
-is_escaped(String) :- 
+pct_encoded(String) :- 
     string_length(String, 3),
-    string_chars(String, ["%", FirstHex, SecondHex]),
-    is_hex_digit(FirstHex),
-    is_hex_digit(SecondHex).
-is_hex_digit(Char) :-
-    (is_digit(Char) ;
-        Char == 'A' ;
-        Char == 'B' ;
-        Char == 'C' ;
-        Char == 'D' ;
-        Char == 'E' ;
-        Char == 'F' ;
-        Char == 'a' ;
-        Char == 'b' ;
-        Char == 'c' ;
-        Char == 'd' ;
-        Char == 'e' ;
-        Char == 'f').
+    string_concat("%", Rest, String),
+    string_concat(Hex1, Hex2, Rest),
+    hex_digit(Hex1),
+    hex_digit(Hex2).
 
-loop(0).
-loop(N) :-
-    is_uri('https://www.example.com/path/to;param?query#fragment'),
-    Tmp is N - 1,
-    loop(Tmp).
+hex_digit("A") :- !.
+hex_digit("B") :- !.
+hex_digit("C") :- !.
+hex_digit("D") :- !.
+hex_digit("E") :- !.
+hex_digit("F") :- !.
+hex_digit("a") :- !.
+hex_digit("b") :- !.
+hex_digit("c") :- !.
+hex_digit("d") :- !.
+hex_digit("e") :- !.
+hex_digit("f") :- !.
+hex_digit(Char) :-
+    digit(Char).
 
-:- begin_tests(is_uri).
+hex_digits(Char) :-
+    hex_digit(Char),
+    !.
+hex_digits(String) :-
+    string_concat(FirstChar, Rest, String),
+    string_length(FirstChar, 1),
+    hex_digit(FirstChar),
+    hex_digits(Rest).
 
-test(loop) :-
-    loop(100).
+unreserved("-") :- !.
+unreserved(".") :- !.
+unreserved("_") :- !.
+unreserved("~") :- !.
+unreserved(Char) :-
+    alpha(Char),
+    !.
+unreserved(Char) :-
+    digit(Char).
 
-:- end_tests(is_uri).
+reserved(Char) :-
+    gen_delims(Char),
+    !.
+reserved(Char) :-
+    sub_delims(Char).
+
+gen_delims(":") :- !.
+gen_delims("/") :- !.
+gen_delims("?") :- !.
+gen_delims("#") :- !.
+gen_delims("[") :- !.
+gen_delims("]") :- !.
+gen_delims("@").
+
+sub_delims("!") :- !.
+sub_delims("$") :- !.
+sub_delims("&") :- !.
+sub_delims("'") :- !.
+sub_delims("(") :- !.
+sub_delims(")") :- !.
+sub_delims("*") :- !.
+sub_delims("+") :- !.
+sub_delims(",") :- !.
+sub_delims(";") :- !.
+sub_delims("=").
+
+alpha("A") :- !.
+alpha("B") :- !.
+alpha("C") :- !.
+alpha("D") :- !.
+alpha("E") :- !.
+alpha("F") :- !.
+alpha("G") :- !.
+alpha("H") :- !.
+alpha("I") :- !.
+alpha("J") :- !.
+alpha("K") :- !.
+alpha("L") :- !.
+alpha("M") :- !.
+alpha("N") :- !.
+alpha("O") :- !.
+alpha("P") :- !.
+alpha("Q") :- !.
+alpha("R") :- !.
+alpha("S") :- !.
+alpha("T") :- !.
+alpha("U") :- !.
+alpha("V") :- !.
+alpha("W") :- !.
+alpha("X") :- !.
+alpha("Y") :- !.
+alpha("Z") :- !.
+alpha("a") :- !.
+alpha("b") :- !.
+alpha("c") :- !.
+alpha("d") :- !.
+alpha("e") :- !.
+alpha("f") :- !.
+alpha("g") :- !.
+alpha("h") :- !.
+alpha("i") :- !.
+alpha("j") :- !.
+alpha("k") :- !.
+alpha("l") :- !.
+alpha("m") :- !.
+alpha("n") :- !.
+alpha("o") :- !.
+alpha("p") :- !.
+alpha("q") :- !.
+alpha("r") :- !.
+alpha("s") :- !.
+alpha("t") :- !.
+alpha("u") :- !.
+alpha("v") :- !.
+alpha("w") :- !.
+alpha("x") :- !.
+alpha("y") :- !.
+alpha("z").
+
+digit("0") :- !.
+digit("1") :- !.
+digit("2") :- !.
+digit("3") :- !.
+digit("4") :- !.
+digit("5") :- !.
+digit("6") :- !.
+digit("7") :- !.
+digit("8") :- !.
+digit("9").
